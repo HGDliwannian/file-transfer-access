@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const QRCode = require('qrcode');
 const { EventEmitter } = require('events');
 
 const DEFAULT_PORT = 3847;
@@ -66,6 +67,7 @@ function createServer(options = {}) {
     publicDir,
     port = DEFAULT_PORT,
     onUpload,
+    getUpdateCheck,
   } = options;
 
   const events = new EventEmitter();
@@ -80,15 +82,45 @@ function createServer(options = {}) {
     res.send(JSON.stringify(body));
   }
 
-  app.get('/api/status', (_req, res) => {
+  app.get('/api/status', async (_req, res) => {
     const ip = getLanIp();
+    const mobileUrl = `http://${ip}:${port}/mobile.html`;
+    let qrDataUrl = '';
+    try {
+      qrDataUrl = await QRCode.toDataURL(mobileUrl, { width: 200, margin: 1 });
+    } catch {
+      /* ignore */
+    }
     sendJson(res, {
       ok: true,
       ip,
       port,
       url: `http://${ip}:${port}`,
+      mobileUrl,
+      qrDataUrl,
       saveDir: currentSaveDir,
     });
+  });
+
+  function readBuildInfo() {
+    try {
+      const raw = fs.readFileSync(path.join(publicDir, 'build-info.json'), 'utf8');
+      return JSON.parse(raw);
+    } catch {
+      return { version: '0', buildTime: 0, buildId: 'dev' };
+    }
+  }
+
+  app.get('/api/update-check', (_req, res) => {
+    try {
+      if (typeof getUpdateCheck === 'function') {
+        return sendJson(res, getUpdateCheck());
+      }
+      const current = readBuildInfo();
+      sendJson(res, { available: false, current, latest: null, reason: 'web_only' });
+    } catch (err) {
+      sendJson(res, { ok: false, error: err.message || 'check failed' });
+    }
   });
 
   app.get('/api/files', (_req, res) => {
@@ -201,11 +233,20 @@ function createServer(options = {}) {
     });
   });
 
-  app.get('/', (_req, res) => {
+  function isPhoneUserAgent(ua) {
+    return /iPhone|iPod|Android.*Mobile|webOS|BlackBerry|Opera Mini/i.test(ua || '');
+  }
+
+  app.get('/', (req, res) => {
+    const ua = req.headers['user-agent'] || '';
+    if (isPhoneUserAgent(ua)) {
+      return res.redirect(302, '/mobile.html');
+    }
     res.sendFile(path.resolve(publicDir, 'index.html'));
   });
+
   app.get('/mobile.html', (_req, res) => {
-    res.redirect('/');
+    res.sendFile(path.resolve(publicDir, 'mobile.html'));
   });
 
   app.use('/files', (req, res, next) => {

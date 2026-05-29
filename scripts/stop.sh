@@ -14,6 +14,7 @@ lsof -ti :"${PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
 osascript -e "quit app \"${APP_NAME}\"" 2>/dev/null || true
 
 pkill -f "electron.*${ROOT}" 2>/dev/null || true
+pkill -f "electron -e" 2>/dev/null || true
 pkill -f "snapdrop-personal" 2>/dev/null || true
 
 sleep 0.4

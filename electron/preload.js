@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('snapdrop', {
   openFile: (name) => ipcRenderer.invoke('open-file', name),
   revealFile: (name) => ipcRenderer.invoke('reveal-file', name),
   copyFile: (name) => ipcRenderer.invoke('copy-file', name),
+  copyFiles: (names) => ipcRenderer.invoke('copy-files', names),
   onFileUploaded: (cb) => {
     const handler = (_e, file) => cb(file);
     ipcRenderer.on('file-uploaded', handler);

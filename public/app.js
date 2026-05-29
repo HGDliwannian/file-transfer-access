@@ -5,23 +5,28 @@
   const serverUrlEl = document.getElementById('serverUrl');
   const qrcodeEl = document.getElementById('qrcode');
   const saveDirEl = document.getElementById('saveDir');
-  const launchAtLoginEl = document.getElementById('launchAtLogin');
   const settingsCard = document.getElementById('settingsCard');
   const fileInput = document.getElementById('fileInput');
-  const cameraInput = document.getElementById('cameraInput');
-  const pendingPreview = document.getElementById('pendingPreview');
-  const pendingWrap = document.getElementById('pendingWrap');
-  const pendingCountEl = document.getElementById('pendingCount');
-  const btnClearPending = document.getElementById('btnClearPending');
-  const uploadBtn = document.getElementById('uploadBtn');
   const uploadStatus = document.getElementById('uploadStatus');
   const fileListEl = document.getElementById('fileList');
+  const filesDropArea = document.getElementById('filesDropArea');
+  const filesAppendZone = document.getElementById('filesAppendZone');
   const fileCountEl = document.getElementById('fileCount');
   const btnDeleteAll = document.getElementById('btnDeleteAll');
+  const btnCopySelected = document.getElementById('btnCopySelected');
+  const selectionCountEl = document.getElementById('selectionCount');
   const previewPane = document.getElementById('previewPane');
+  const previewHeader = document.getElementById('previewHeader');
+  const previewFileName = document.getElementById('previewFileName');
+  const previewFileMeta = document.getElementById('previewFileMeta');
+  const previewStage = previewPane?.querySelector('.preview-stage');
+  const previewEmpty = previewStage?.querySelector('.empty');
   const previewImg = document.getElementById('previewImg');
   const previewFrame = document.getElementById('previewFrame');
+  const previewIcon = document.getElementById('previewIcon');
+  const previewIconHint = document.getElementById('previewIconHint');
   const previewActions = document.getElementById('previewActions');
+  const filesListPanel = document.getElementById('filesListPanel');
   const btnDownload = document.getElementById('btnDownload');
   const btnOpenNative = document.getElementById('btnOpenNative');
   const btnRevealNative = document.getElementById('btnRevealNative');
@@ -29,8 +34,11 @@
   const copyStatusEl = document.getElementById('copyStatus');
   const btnToggleUrl = document.getElementById('btnToggleUrl');
 
-  let pendingFiles = [];
+  let uploadChain = Promise.resolve();
   let selectedFile = null;
+  let selectedNames = new Set();
+  let allFiles = [];
+  let lastSelectIndex = -1;
   let eventSource = null;
   let realAccessUrl = '';
   let urlRevealed = false;
@@ -44,6 +52,8 @@
   const infoModal = document.getElementById('infoModal');
   const infoMessageEl = document.getElementById('infoMessage');
   const infoOkBtn = document.getElementById('infoOk');
+  const appToast = document.getElementById('appToast');
+  const appToastMessage = document.getElementById('appToastMessage');
 
   const updateBar = document.getElementById('updateBar');
   const updateBarText = document.getElementById('updateBarText');
@@ -51,6 +61,26 @@
   const updateModalMessage = document.getElementById('updateModalMessage');
   const appVersionEl = document.getElementById('appVersion');
   let pendingUpdate = null;
+  let appToastTimer = null;
+
+  function showInfoToast(message, ms = 500, variant = 'ok') {
+    return new Promise((resolve) => {
+      if (appToastTimer) clearTimeout(appToastTimer);
+      if (!appToast || !appToastMessage) {
+        resolve();
+        return;
+      }
+      appToastMessage.textContent = message;
+      appToast.classList.toggle('app-toast--error', variant === 'error');
+      appToast.classList.remove('hidden');
+      appToastTimer = setTimeout(() => {
+        appToast.classList.add('hidden');
+        appToast.classList.remove('app-toast--error');
+        appToastTimer = null;
+        resolve();
+      }, ms);
+    });
+  }
 
   function showInfo(message) {
     return new Promise((resolve) => {
@@ -120,16 +150,50 @@
     }
   }
 
-  function setCopyStatus(text, type) {
+  const COPY_OK_TOAST = '已复制到剪贴板';
+
+  function setCopyStatus(text) {
     if (!copyStatusEl) return;
     copyStatusEl.textContent = text;
-    copyStatusEl.className = 'copy-status' + (type ? ' ' + type : '');
+    copyStatusEl.className = 'copy-status';
     if (copyStatusTimer) clearTimeout(copyStatusTimer);
-    if (text) {
-      copyStatusTimer = setTimeout(() => {
-        copyStatusEl.textContent = '';
-        copyStatusEl.className = 'copy-status';
-      }, 3000);
+    copyStatusTimer = null;
+  }
+
+  function hideAppToast() {
+    if (appToastTimer) {
+      clearTimeout(appToastTimer);
+      appToastTimer = null;
+    }
+    appToast?.classList.add('hidden');
+  }
+
+  async function runCopyWithFastToast(copyFn) {
+    const res = await copyFn();
+    if (res?.ok) {
+      await showInfoToast(COPY_OK_TOAST, 500);
+    } else {
+      await showInfoToast(res?.message || '复制失败', 500, 'error');
+    }
+    return res;
+  }
+
+  async function verifyWebClipboardImage() {
+    if (!navigator.clipboard?.read) return true;
+    try {
+      const items = await navigator.clipboard.read();
+      return items.some((item) => item.types.some((t) => t.startsWith('image/')));
+    } catch {
+      return false;
+    }
+  }
+
+  async function verifyWebClipboardText(expected) {
+    if (!navigator.clipboard?.readText) return true;
+    try {
+      return (await navigator.clipboard.readText()) === expected;
+    } catch {
+      return false;
     }
   }
 
@@ -250,225 +314,398 @@
       if (isImage(file.name)) {
         const res = await fetch(url);
         const blob = await res.blob();
-        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        return { ok: true, message: '图片已复制到剪贴板' };
+        const type = blob.type || 'image/png';
+        await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
+        const ok = await verifyWebClipboardImage();
+        return ok ? { ok: true } : { ok: false, message: '复制失败' };
       }
       if (/\.(txt|md|json|csv|log|xml|html|css|js|ts|py|sh|yaml|yml)$/i.test(file.name)) {
         const text = await (await fetch(url)).text();
         await navigator.clipboard.writeText(text);
-        return { ok: true, message: '文本已复制到剪贴板' };
+        const ok = await verifyWebClipboardText(text);
+        return ok ? { ok: true } : { ok: false, message: '复制失败' };
       }
       await navigator.clipboard.writeText(url);
-      return { ok: true, message: '已复制文件链接' };
+      const ok = await verifyWebClipboardText(url);
+      return ok ? { ok: true } : { ok: false, message: '复制失败' };
     } catch (err) {
       return { ok: false, message: err.message || '复制失败' };
     }
   }
 
+  function getSelectedFiles() {
+    return allFiles.filter((f) => selectedNames.has(f.name));
+  }
+
+  async function copyFilesToClipboard(files) {
+    if (!files.length) return { ok: false, message: '请先选择文件' };
+    if (files.length === 1) return copyFileToClipboard(files[0]);
+
+    if (isNative) {
+      return window.snapdrop.copyFiles(files.map((f) => f.name));
+    }
+
+    try {
+      const lines = files.map((f) => fileUrl(f));
+      const text = lines.join('\n');
+      await navigator.clipboard.writeText(text);
+      const ok = await verifyWebClipboardText(text);
+      return ok ? { ok: true } : { ok: false, message: '批量复制失败' };
+    } catch (err) {
+      return { ok: false, message: err.message || '批量复制失败' };
+    }
+  }
+
+  function updateSelectionUi() {
+    const count = selectedNames.size;
+    if (selectionCountEl) {
+      selectionCountEl.textContent = `已选 ${count}`;
+      selectionCountEl.classList.toggle('has-selection', count > 0);
+      selectionCountEl.classList.toggle('hidden', count === 0);
+    }
+    if (btnCopySelected) btnCopySelected.disabled = count === 0;
+    if (btnDeleteAll) btnDeleteAll.disabled = count === 0;
+
+    document.querySelectorAll('.file-list li[data-name]').forEach((li) => {
+      const name = li.dataset.name;
+      li.classList.toggle('checked', selectedNames.has(name));
+    });
+  }
+
+  function toggleFileSelection(name, checked) {
+    if (checked) selectedNames.add(name);
+    else selectedNames.delete(name);
+    updateSelectionUi();
+  }
+
+  function selectRange(fromIndex, toIndex) {
+    const start = Math.min(fromIndex, toIndex);
+    const end = Math.max(fromIndex, toIndex);
+    selectedNames.clear();
+    for (let i = start; i <= end; i += 1) {
+      if (allFiles[i]) selectedNames.add(allFiles[i].name);
+    }
+    updateSelectionUi();
+  }
+
+  async function copySelectedFiles() {
+    const files = getSelectedFiles();
+    return runCopyWithFastToast(() => copyFilesToClipboard(files));
+  }
+
+  function setPreviewStageLayout(layout) {
+    previewStage?.classList.toggle('preview-stage--centered', layout === 'centered');
+    previewStage?.classList.toggle('preview-stage--pdf', layout === 'pdf');
+  }
+
   function showPreview(file) {
     selectedFile = file;
-    const empty = previewPane.querySelector('.empty');
     previewImg.hidden = true;
     previewFrame.hidden = true;
+    previewIcon.hidden = true;
+    previewIcon.innerHTML = '';
+    previewIconHint?.classList.add('hidden');
     previewActions.classList.add('hidden');
+    previewHeader?.classList.add('hidden');
+    setPreviewStageLayout(null);
 
     if (!file) {
-      empty.hidden = false;
-      empty.textContent = '选择文件预览或下载';
+      previewPane?.classList.remove('has-preview');
+      if (previewEmpty) {
+        previewEmpty.hidden = false;
+        previewEmpty.querySelector('.empty-text').textContent = '点击文件进行预览';
+      }
+      setPreviewStageLayout('centered');
       return;
     }
 
-    empty.hidden = true;
+    previewPane?.classList.add('has-preview');
+
+    const canInlinePreview = isImage(file.name) || /\.pdf$/i.test(file.name);
+    if (!canInlinePreview) {
+      previewHeader?.classList.remove('hidden');
+      if (previewFileName) previewFileName.textContent = file.name;
+      if (previewFileMeta) {
+        previewFileMeta.textContent = `${formatSize(file.size)} · ${formatTime(file.mtime)}`;
+      }
+    }
+
+    if (previewEmpty) previewEmpty.hidden = true;
     const url = fileUrl(file);
     btnDownload.href = url;
     btnDownload.download = file.name;
     previewActions.classList.remove('hidden');
     setCopyStatus('');
+    if (btnCopyFile) btnCopyFile.disabled = false;
 
     if (isNative) {
       btnOpenNative.classList.remove('hidden');
       btnRevealNative.classList.remove('hidden');
+    } else {
+      btnOpenNative.classList.add('hidden');
+      btnRevealNative.classList.add('hidden');
     }
 
     if (isImage(file.name)) {
       previewImg.src = url;
       previewImg.hidden = false;
+      setPreviewStageLayout('centered');
     } else if (/\.pdf$/i.test(file.name)) {
       previewFrame.src = url;
       previewFrame.hidden = false;
+      setPreviewStageLayout('pdf');
     } else {
-      empty.hidden = false;
-      empty.textContent = isNative ? '此格式请点「本机打开」' : '此格式请点「下载」查看';
+      previewIcon.innerHTML = buildFileThumbHtml(file);
+      previewIcon.hidden = false;
+      setPreviewStageLayout('centered');
+      if (previewIconHint) {
+        previewIconHint.textContent = isNative ? '此格式请点「本机打开」' : '此格式请点「下载」查看';
+        previewIconHint.classList.remove('hidden');
+      }
+      const video = previewIcon.querySelector('.thumb-video');
+      if (video) {
+        video.addEventListener('loadeddata', () => {
+          try { video.currentTime = 0.1; } catch { /* ignore */ }
+        });
+      }
     }
   }
 
   async function loadAccessInfo() {
-    if (isNative) {
-      const status = await window.snapdrop.getStatus();
+    const applyStatus = (status) => {
       setAccessUrl(status.mobileUrl || status.url);
       if (status.qrDataUrl) {
         qrcodeEl.innerHTML = `<img src="${status.qrDataUrl}" alt="扫码访问" />`;
       }
-      saveDirEl.textContent = status.saveDir || '—';
-      const settings = await window.snapdrop.getSettings();
-      launchAtLoginEl.checked = settings.launchAtLogin;
-      return;
-    }
+      if (saveDirEl) saveDirEl.textContent = status.saveDir || '—';
+    };
 
-    const res = await fetch('/api/status');
-    const data = await res.json();
-    const accessUrl = data.url || baseUrl;
-    setAccessUrl(accessUrl);
-    qrcodeEl.innerHTML = `<p class="tip" style="padding:12px;text-align:center">在运行快传的电脑上查看二维码</p>`;
-  }
-
-  function removePendingAt(index) {
-    pendingFiles.splice(index, 1);
-    renderPending();
-  }
-
-  function clearPending() {
-    pendingFiles = [];
-    renderPending();
-    setUploadStatus('');
-  }
-
-  function renderPending() {
-    pendingPreview.innerHTML = '';
-    if (!pendingFiles.length) {
-      pendingWrap.classList.add('hidden');
-      uploadBtn.classList.add('hidden');
-      return;
-    }
-    pendingWrap.classList.remove('hidden');
-    uploadBtn.classList.remove('hidden');
-    if (pendingCountEl) {
-      pendingCountEl.textContent = `已选 ${pendingFiles.length} 个`;
-    }
-
-    pendingFiles.forEach((f, index) => {
-      const item = document.createElement('div');
-      item.className = 'pending-item';
-
-      if (f.type.startsWith('image/')) {
-        const img = document.createElement('img');
-        const objUrl = URL.createObjectURL(f);
-        img.src = objUrl;
-        img.alt = f.name;
-        img.onload = () => URL.revokeObjectURL(objUrl);
-        item.appendChild(img);
-      } else {
-        const tag = document.createElement('div');
-        tag.className = 'file-tag';
-        tag.textContent = f.name;
-        tag.title = f.name;
-        item.appendChild(tag);
-      }
-
-      const removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.className = 'pending-remove';
-      removeBtn.setAttribute('aria-label', `移除 ${f.name}`);
-      removeBtn.textContent = '×';
-      removeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        removePendingAt(index);
+    try {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      applyStatus({
+        mobileUrl: data.mobileUrl || (data.url ? `${data.url}/` : baseUrl),
+        url: data.url,
+        qrDataUrl: data.qrDataUrl,
+        saveDir: data.saveDir,
       });
-      item.appendChild(removeBtn);
-      pendingPreview.appendChild(item);
-    });
-    setUploadStatus(`已选 ${pendingFiles.length} 个，点击上传`);
+    } catch {
+      /* ignore */
+    }
+
+    if (isNative && window.snapdrop?.getStatus) {
+      window.snapdrop.getStatus()
+        .then((status) => applyStatus(status))
+        .catch(() => {});
+    }
   }
 
-  function addPending(fileList) {
-    pendingFiles = pendingFiles.concat(Array.from(fileList));
-    renderPending();
-  }
-
-  fileInput.addEventListener('change', () => {
-    if (fileInput.files?.length) addPending(fileInput.files);
-    fileInput.value = '';
-  });
-  cameraInput?.addEventListener('change', () => {
-    if (cameraInput.files?.length) addPending(cameraInput.files);
-    cameraInput.value = '';
-  });
-
-  btnClearPending?.addEventListener('click', clearPending);
-
-  uploadBtn.addEventListener('click', async () => {
-    if (!pendingFiles.length) return;
-    uploadBtn.disabled = true;
+  async function doUpload(files) {
+    if (!files.length) return;
     setUploadStatus('上传中…');
     const form = new FormData();
-    pendingFiles.forEach((f) => form.append('files', f, f.name));
+    files.forEach((f) => form.append('files', f, f.name));
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '上传失败');
-      setUploadStatus(`已上传 ${data.files?.length || pendingFiles.length} 个`, 'ok');
-      pendingFiles = [];
-      renderPending();
+      setUploadStatus(`已上传 ${data.files?.length || files.length} 个`, 'ok');
       if (data.files?.[0]) await refreshFiles(data.files[0].name);
+      else await refreshFiles();
     } catch (err) {
       setUploadStatus(err.message || '上传失败', 'err');
-    } finally {
-      uploadBtn.disabled = false;
     }
+  }
+
+  function uploadFiles(fileList) {
+    const files = Array.from(fileList);
+    if (!files.length) return uploadChain;
+    uploadChain = uploadChain.then(() => doUpload(files));
+    return uploadChain;
+  }
+
+  function buildEmptyListHtml() {
+    return `<li class="files-dropzone-hint">
+      <span class="files-dropzone__icon" aria-hidden="true">↑</span>
+      拖放或点击上传<br>
+      <span class="files-dropzone__sub">图片、文档等 · 上传后各端实时同步</span>
+    </li>`;
+  }
+
+  function setEmptyDropzone(active) {
+    filesDropArea?.classList.toggle('files-drop-area--empty', active);
+    filesDropArea?.toggleAttribute('role', active ? 'button' : false);
+    filesDropArea?.toggleAttribute('tabindex', active ? '0' : false);
+    fileListEl.classList.toggle('file-list--empty', active);
+    filesAppendZone?.classList.toggle('hidden', active);
+  }
+
+  function bindUploadZones() {
+    if (!filesDropArea || filesDropArea.dataset.bound) return;
+    filesDropArea.dataset.bound = '1';
+    filesDropArea.addEventListener('click', (e) => {
+      if (filesDropArea.classList.contains('files-drop-area--empty')) fileInput.click();
+    });
+    filesDropArea.addEventListener('keydown', (e) => {
+      if (!filesDropArea.classList.contains('files-drop-area--empty')) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fileInput.click();
+      }
+    });
+    filesAppendZone?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+    filesAppendZone?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fileInput.click();
+      }
+    });
+  }
+
+  function addFiles(fileList) {
+    uploadFiles(fileList);
+  }
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files?.length) addFiles(fileInput.files);
+    fileInput.value = '';
   });
+
+  async function deleteFileByName(name) {
+    const res = await fetch(`/api/files/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || '删除失败');
+  }
+
+  async function deleteSelectedFiles() {
+    const names = [...selectedNames];
+    if (!names.length) return;
+    btnDeleteAll.disabled = true;
+    try {
+      for (const name of names) {
+        await deleteFileByName(name);
+        selectedNames.delete(name);
+      }
+      await refreshFiles();
+    } catch (err) {
+      await showInfo(err.message || '删除失败');
+      await refreshFiles();
+    }
+  }
 
   async function refreshFiles(selectName) {
     const res = await fetch('/api/files');
     const { files } = await res.json();
+    allFiles = files;
+    const prevSelected = new Set(selectedNames);
+    selectedNames = new Set(files.filter((f) => prevSelected.has(f.name)).map((f) => f.name));
+
     fileCountEl.textContent = String(files.length);
     fileListEl.innerHTML = '';
-    if (btnDeleteAll) btnDeleteAll.disabled = !files.length;
 
     if (!files.length) {
-      fileListEl.innerHTML = '<li class="empty-list">暂无文件，任一端上传后都会出现在这里</li>';
+      setEmptyDropzone(true);
+      fileListEl.innerHTML = buildEmptyListHtml();
+      selectedNames.clear();
+      lastSelectIndex = -1;
+      updateSelectionUi();
       showPreview(null);
       return;
     }
 
-    files.forEach((file) => {
+    setEmptyDropzone(false);
+
+    files.forEach((file, index) => {
       const li = document.createElement('li');
+      li.dataset.name = file.name;
       li.innerHTML = `
         <div class="file-row">
-          <div class="file-body">
-            <div class="name">${escapeHtml(file.name)}</div>
-            <div class="meta">${formatSize(file.size)} · ${formatTime(file.mtime)}</div>
-            <div class="ops">
-              <a class="mac-btn mac-btn--small" href="${fileUrl(file)}" download="${escapeAttr(file.name)}">下载</a>
-              <button type="button" class="mac-btn mac-btn--small" data-action="preview">预览</button>
-              <button type="button" class="mac-btn mac-btn--small" data-action="delete">删除</button>
+          <div class="file-content">
+            <button type="button" class="file-hit" aria-label="预览 ${escapeAttr(file.name)}">
+              <div class="file-info">
+                <div class="name">${escapeHtml(file.name)}</div>
+                <div class="meta">${formatSize(file.size)} · ${formatTime(file.mtime)}</div>
+              </div>
+              <div class="file-thumb">${buildFileThumbHtml(file)}</div>
+            </button>
+            <div class="file-remove-zone">
+              <button type="button" class="file-remove" data-action="delete" aria-label="删除 ${escapeAttr(file.name)}" title="删除">×</button>
             </div>
           </div>
-          <div class="file-thumb">${buildFileThumbHtml(file)}</div>
         </div>
       `;
-      li.querySelector('[data-action="preview"]').addEventListener('click', (e) => {
-        e.stopPropagation();
+
+      li.querySelector('.file-hit')?.addEventListener('click', (e) => {
+        const modKey = e.metaKey || e.ctrlKey;
+        if (e.shiftKey && lastSelectIndex >= 0) {
+          selectRange(lastSelectIndex, index);
+          selectItem(li, file);
+          lastSelectIndex = index;
+          return;
+        }
+        if (modKey) {
+          toggleFileSelection(file.name, !selectedNames.has(file.name));
+          selectItem(li, file);
+          lastSelectIndex = index;
+          return;
+        }
+        selectedNames.clear();
+        selectedNames.add(file.name);
+        updateSelectionUi();
         selectItem(li, file);
+        lastSelectIndex = index;
       });
-      li.querySelector('[data-action="delete"]').addEventListener('click', async (e) => {
+
+      li.querySelector('[data-action="delete"]')?.addEventListener('click', async (e) => {
         e.stopPropagation();
-        const ok = await showConfirm('确定删除该文件？所有端将同步移除');
-        if (!ok) return;
-        await fetch(`/api/files/${encodeURIComponent(file.name)}`, { method: 'DELETE' });
-        await refreshFiles();
+        try {
+          await deleteFileByName(file.name);
+          selectedNames.delete(file.name);
+          await refreshFiles();
+        } catch (err) {
+          await showInfo(err.message || '删除失败');
+          await refreshFiles();
+        }
       });
-      li.addEventListener('click', () => selectItem(li, file));
+
       setupListThumb(li, file);
       fileListEl.appendChild(li);
       if (selectName === file.name) selectItem(li, file);
     });
+
+    updateSelectionUi();
   }
 
   function selectItem(li, file) {
     document.querySelectorAll('.file-list li').forEach((el) => el.classList.remove('active'));
     li.classList.add('active');
     showPreview(file);
+    li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
+
+  function setupDropzone() {
+    if (!filesListPanel) return;
+    const prevent = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((ev) => {
+      filesListPanel.addEventListener(ev, prevent);
+    });
+    filesListPanel.addEventListener('dragenter', () => filesListPanel.classList.add('is-dragover'));
+    filesListPanel.addEventListener('dragleave', (e) => {
+      if (!filesListPanel.contains(e.relatedTarget)) filesListPanel.classList.remove('is-dragover');
+    });
+    filesListPanel.addEventListener('drop', (e) => {
+      filesListPanel.classList.remove('is-dragover');
+      const files = e.dataTransfer?.files;
+      if (files?.length) addFiles(files);
+    });
+  }
+  setupDropzone();
 
   function escapeHtml(s) {
     const d = document.createElement('div');
@@ -502,23 +739,31 @@
 
   document.getElementById('btnRefresh').addEventListener('click', async () => {
     await refreshFiles();
-    await showInfo('刷新成功');
+    await showInfoToast('刷新成功');
   });
 
-  btnDeleteAll?.addEventListener('click', async () => {
-    const ok = await showConfirm('确定删除全部文件？所有端将同步移除');
-    if (!ok) return;
-    btnDeleteAll.disabled = true;
+  async function onCheckUpdateClick() {
+    if (!isNative) return;
     try {
-      const res = await fetch('/api/files', { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '删除失败');
-      await refreshFiles();
-    } catch (err) {
-      await showInfo(err.message || '删除失败');
-      await refreshFiles();
+      const info = await window.snapdrop.checkUpdate(false);
+      if (info?.available) {
+        showUpdateModal(info);
+      } else {
+        await showInfoToast('当前已是最新版本');
+        await refreshVersionInfo();
+      }
+    } catch {
+      await showInfoToast('检查更新失败');
     }
-  });
+  }
+
+  if (isNative) {
+    document.getElementById('btnCheckUpdate')?.addEventListener('click', onCheckUpdateClick);
+  }
+
+  btnDeleteAll?.addEventListener('click', deleteSelectedFiles);
+
+  btnCopySelected?.addEventListener('click', copySelectedFiles);
 
   btnToggleUrl?.addEventListener('click', () => {
     if (!realAccessUrl) return;
@@ -528,12 +773,7 @@
 
   btnCopyFile?.addEventListener('click', async () => {
     if (!selectedFile) return;
-    const res = await copyFileToClipboard(selectedFile);
-    if (res?.ok) {
-      setCopyStatus(res.message, 'ok');
-    } else {
-      await showInfo(res?.message || '复制失败');
-    }
+    await runCopyWithFastToast(() => copyFileToClipboard(selectedFile));
   });
 
   function formatBuildTime(ms) {
@@ -588,17 +828,7 @@
   }
 
   if (isNative) {
-    document.getElementById('btnChooseDir').addEventListener('click', async () => {
-      const dir = await window.snapdrop.chooseSaveDir();
-      if (dir) {
-        saveDirEl.textContent = dir;
-        await refreshFiles();
-      }
-    });
     document.getElementById('btnOpenDir').addEventListener('click', () => window.snapdrop.openSaveDir());
-    launchAtLoginEl.addEventListener('change', async () => {
-      await window.snapdrop.setLaunchAtLogin(launchAtLoginEl.checked);
-    });
     btnOpenNative.addEventListener('click', () => {
       if (selectedFile) window.snapdrop.openFile(selectedFile.name);
     });
@@ -607,15 +837,6 @@
     });
     window.snapdrop.onFileUploaded((file) => refreshFiles(file.name));
 
-    document.getElementById('btnCheckUpdate')?.addEventListener('click', async () => {
-      const info = await window.snapdrop.checkUpdate(false);
-      if (info?.available) {
-        showUpdateModal(info);
-      } else {
-        await showInfo('当前已是最新版本');
-        await refreshVersionInfo();
-      }
-    });
     document.getElementById('updateBarUpgrade')?.addEventListener('click', onUpgradeClick);
     document.getElementById('updateModalUpgrade')?.addEventListener('click', onUpgradeClick);
     document.getElementById('updateBarLater')?.addEventListener('click', onLaterClick);
@@ -630,11 +851,16 @@
   }
 
   async function init() {
-    await loadAccessInfo();
-    await refreshFiles();
+    bindUploadZones();
+    await Promise.all([
+      loadAccessInfo().catch(() => {}),
+      refreshFiles().catch(() => {}),
+    ]);
     connectEvents();
-    if (isNative) await refreshVersionInfo();
+    if (isNative) await refreshVersionInfo().catch(() => {});
   }
 
-  init();
+  init().catch(() => {
+    refreshFiles().catch(() => {});
+  });
 })();

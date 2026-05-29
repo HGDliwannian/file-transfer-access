@@ -4,100 +4,120 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0c0d10" />
   <title>快传</title>
   <link rel="stylesheet" href="/app.css" />
 </head>
 <body>
+  <div class="app-bg" aria-hidden="true"></div>
   <div class="app-shell">
   <div class="app">
     <header class="topbar">
-      <div>
-        <h1>快传</h1>
-        <p class="tagline">同一热点 · 多端共享 · 实时同步</p>
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 14h8M16 14h8M12 8v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="14" cy="14" r="11" stroke="currentColor" stroke-width="1.5" opacity="0.35"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>快传</h1>
+          <p class="tagline">同一热点 · 多端共享 · 实时同步</p>
+        </div>
       </div>
       <div class="topbar-actions">
         <span id="appVersion" class="version-pill electron-only">版本 —</span>
-        <button id="btnCheckUpdate" type="button" class="mac-btn mac-btn--compact electron-only">检查更新</button>
-        <button id="btnRefresh" type="button" class="mac-btn mac-btn--compact">刷新</button>
+        <button id="btnCheckUpdate" type="button" class="mac-btn mac-btn--ghost mac-btn--compact electron-only">检查更新</button>
+        <button id="btnRefresh" type="button" class="mac-btn mac-btn--ghost mac-btn--compact">刷新</button>
       </div>
     </header>
 
     <div class="grid">
       <aside class="panel-side">
-        <section class="card" id="accessCard">
-          <h2>其他设备访问</h2>
+        <section class="card card--connect" id="accessCard">
+          <div class="card-label">
+            <span class="card-label__dot"></span>
+            <h2>其他设备访问</h2>
+          </div>
           <div class="url-row">
             <p id="serverUrl" class="url">—</p>
             <button id="btnToggleUrl" type="button" class="mac-btn mac-btn--compact">显示</button>
           </div>
           <div id="qrcode" class="qrcode">—</div>
-          <p class="tip">手机/另一台电脑连同一热点后扫码或打开上方地址</p>
+          <p class="tip">手机或另一台电脑连接同一热点后，扫码或打开上方地址</p>
         </section>
 
         <section class="card native-only hidden" id="settingsCard">
-          <h2>本机设置</h2>
+          <div class="card-label">
+            <span class="card-label__dot card-label__dot--muted"></span>
+            <h2>本机设置</h2>
+          </div>
           <p id="saveDir" class="path">—</p>
           <div class="row-btns">
-            <button id="btnChooseDir" type="button" class="mac-btn">保存文件夹</button>
             <button id="btnOpenDir" type="button" class="mac-btn">打开文件夹</button>
           </div>
-          <label class="check">
-            <input id="launchAtLogin" type="checkbox" />
-            <span>登录时自动启动（默认关闭，需手动开启）</span>
-          </label>
         </section>
       </aside>
 
       <main class="panel-main">
-        <section class="card upload-card">
-          <h2>上传文件</h2>
-          <div class="upload-btns">
-            <label class="mac-btn mac-btn--primary mobile-only" for="cameraInput">
-              拍照
-              <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple hidden />
-            </label>
-            <label class="mac-btn" for="fileInput">
-              选择文件
-              <input id="fileInput" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.json,.csv" multiple hidden />
-            </label>
-            <button id="uploadBtn" class="mac-btn mac-btn--primary hidden" type="button">上传到共享区</button>
-          </div>
-          <div id="pendingWrap" class="pending-wrap hidden">
-            <div class="pending-toolbar">
-              <span id="pendingCount" class="pending-count"></span>
-              <button id="btnClearPending" type="button" class="mac-btn mac-btn--compact mac-btn--danger">全部清掉</button>
-            </div>
-            <div id="pendingPreview" class="pending"></div>
-          </div>
-          <p id="uploadStatus" class="status"></p>
-        </section>
-
-        <section class="files-section">
+        <section class="files-section" id="filesSection">
           <div class="files-head">
-            <h2>共享文件 <span id="fileCount" class="badge badge--count">0</span></h2>
+            <div class="files-head__title">
+              <h2>共享文件</h2>
+              <span id="fileCount" class="badge badge--count">0</span>
+            </div>
+            <div class="files-head__actions">
+            </div>
           </div>
+          <p id="uploadStatus" class="status" role="status"></p>
           <div class="files-layout">
-            <div class="files-list-panel">
-              <ul id="fileList" class="file-list"></ul>
+            <div class="files-list-panel" id="filesListPanel">
+              <div id="filesDropArea" class="files-drop-area">
+                <ul id="fileList" class="file-list"></ul>
+                <div id="filesAppendZone" class="files-append-zone hidden" role="button" tabindex="0">
+                  <span class="files-dropzone__icon" aria-hidden="true">↑</span>
+                  点击或拖放追加文件<br>
+                  <span class="files-dropzone__sub">图片、文档等 · 上传后各端实时同步</span>
+                </div>
+              </div>
               <div class="file-list-footer">
-                <button id="btnDeleteAll" type="button" class="mac-btn mac-btn--danger" disabled>全部删除</button>
+                <span id="selectionCount" class="selection-count hidden">已选 0</span>
+                <div class="file-list-footer__btns">
+                  <button id="btnCopySelected" type="button" class="mac-btn" disabled>批量复制</button>
+                  <button id="btnDeleteAll" type="button" class="mac-btn mac-btn--danger" disabled>删除</button>
+                </div>
               </div>
             </div>
             <div id="previewPane" class="preview-pane">
-              <p class="empty">选择文件预览或下载</p>
-              <img id="previewImg" alt="" hidden />
-              <iframe id="previewFrame" hidden></iframe>
-              <div id="previewActions" class="preview-actions hidden">
-                <a id="btnDownload" class="mac-btn" href="#" download>下载</a>
-                <button id="btnOpenNative" type="button" class="mac-btn native-only hidden">本机打开</button>
-                <button id="btnRevealNative" type="button" class="mac-btn native-only hidden">本机定位</button>
-                <span class="copy-action">
-                  <button id="btnCopyFile" type="button" class="mac-btn">一键复制</button>
-                  <span id="copyStatus" class="copy-status" aria-live="polite"></span>
-                </span>
+              <div id="previewHeader" class="preview-header hidden">
+                <h3 id="previewFileName" class="preview-filename"></h3>
+                <p id="previewFileMeta" class="preview-meta"></p>
+              </div>
+              <div class="preview-stage">
+                <p class="empty">
+                  <span class="empty-icon" aria-hidden="true">◇</span>
+                  <span class="empty-text">点击文件进行预览</span>
+                </p>
+                <img id="previewImg" alt="" hidden />
+                <iframe id="previewFrame" hidden title="文件预览"></iframe>
+                <div id="previewIcon" class="preview-icon hidden"></div>
+                <p id="previewIconHint" class="preview-icon-hint hidden"></p>
+              </div>
+              <div class="preview-footer">
+                <div id="previewActions" class="preview-actions hidden">
+                  <a id="btnDownload" class="mac-btn mac-btn--primary" href="#" download>下载</a>
+                  <button id="btnOpenNative" type="button" class="mac-btn native-only hidden">本机打开</button>
+                  <button id="btnRevealNative" type="button" class="mac-btn native-only hidden">本机定位</button>
+                  <span class="copy-action">
+                    <button id="btnCopyFile" type="button" class="mac-btn">一键复制</button>
+                    <span id="copyStatus" class="copy-status" aria-live="polite"></span>
+                  </span>
+                </div>
               </div>
             </div>
           </div>
+          <label class="visually-hidden" for="fileInput">选择文件</label>
+          <input id="fileInput" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.json,.csv" multiple hidden />
         </section>
       </main>
     </div>
@@ -108,7 +128,7 @@
     <span id="updateBarText">发现新版本</span>
     <div class="update-bar__actions">
       <button type="button" id="updateBarUpgrade" class="mac-btn mac-btn--compact mac-btn--primary">立即升级</button>
-      <button type="button" id="updateBarLater" class="mac-btn mac-btn--compact">稍后</button>
+      <button type="button" id="updateBarLater" class="mac-btn mac-btn--compact mac-btn--ghost">稍后</button>
     </div>
   </div>
 
@@ -130,6 +150,12 @@
       <div class="mac-alert__actions mac-alert__actions--single">
         <button type="button" id="infoOk" class="mac-alert__btn mac-alert__btn--primary">好的</button>
       </div>
+    </div>
+  </div>
+
+  <div id="appToast" class="app-toast hidden" role="status" aria-live="polite">
+    <div class="app-toast__box">
+      <span id="appToastMessage"></span>
     </div>
   </div>
 

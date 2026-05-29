@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0c0d10" />
+  <title>快传 · 手机端</title>
+  <link rel="stylesheet" href="/mobile.css" />
+</head>
+<body class="m-app">
+  <header class="m-topbar">
+    <div class="m-brand">
+      <h1>快传</h1>
+      <p class="m-tagline">手机端 · 实时同步</p>
+    </div>
+    <div class="m-topbar-actions">
+      <button id="btnCheckUpdate" type="button" class="m-btn m-btn--ghost m-btn--sm">检查更新</button>
+      <button id="btnRefresh" type="button" class="m-btn m-btn--ghost m-btn--sm">刷新</button>
+    </div>
+  </header>
+
+  <p id="uploadStatus" class="m-status" role="status"></p>
+
+  <section class="m-files" id="filesSection">
+    <div class="m-files-head">
+      <h2>共享文件</h2>
+      <span id="fileCount" class="m-badge">0</span>
+    </div>
+
+    <div class="m-files-body" id="filesBody">
+      <div id="filesDropArea" class="m-drop-area">
+        <ul id="fileList" class="m-file-list"></ul>
+        <div id="filesAppendZone" class="m-append-zone hidden" role="button" tabindex="0">
+          <span class="m-drop-icon" aria-hidden="true">↑</span>
+          点击追加文件
+        </div>
+      </div>
+
+      <div id="previewPane" class="m-preview hidden">
+        <div class="m-preview-head">
+          <button id="btnClosePreview" type="button" class="m-btn m-btn--ghost m-btn--sm" aria-label="关闭预览">返回列表</button>
+          <h3 id="previewFileName" class="m-preview-name"></h3>
+          <p id="previewFileMeta" class="m-preview-meta"></p>
+        </div>
+        <div class="m-preview-stage">
+          <img id="previewImg" alt="" hidden />
+          <iframe id="previewFrame" hidden title="文件预览"></iframe>
+          <div id="previewIcon" class="m-preview-icon hidden"></div>
+          <p id="previewIconHint" class="m-preview-hint hidden">此格式请点「下载」查看</p>
+        </div>
+        <div class="m-preview-actions">
+          <a id="btnDownload" class="m-btn m-btn--primary" href="#" download>下载</a>
+          <button id="btnCopyFile" type="button" class="m-btn">复制</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="m-files-footer">
+      <span id="selectionCount" class="m-selection hidden">已选 0</span>
+      <div class="m-footer-btns">
+        <button id="btnCopySelected" type="button" class="m-btn" disabled>批量复制</button>
+        <button id="btnDeleteAll" type="button" class="m-btn m-btn--danger" disabled>删除</button>
+      </div>
+    </footer>
+  </section>
+
+  <input id="fileInput" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.json,.csv" multiple hidden />
+
+  <div id="confirmModal" class="m-modal hidden" role="alertdialog" aria-modal="true">
+    <div class="m-modal__backdrop" data-dismiss="cancel"></div>
+    <div class="m-modal__panel">
+      <p id="confirmMessage" class="m-modal__message">确定删除？</p>
+      <div class="m-modal__actions">
+        <button type="button" id="confirmCancel" class="m-modal__btn">取消</button>
+        <button type="button" id="confirmOk" class="m-modal__btn m-modal__btn--primary">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="appToast" class="m-toast hidden" role="status" aria-live="polite">
+    <div class="m-toast__box"><span id="appToastMessage"></span></div>
+  </div>
+
+  <script src="/shared/core.js"></script>
+  <script src="/mobile.js"></script>
+</body>
+</html>

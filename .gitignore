@@ -4,6 +4,10 @@ public/build-info.json
 .DS_Store
 *.log
 
+# Agent skills (use global install: npx skills add ... -g)
+.agents/
+skills-lock.json
+
 # Accidental local artifacts
 bash
 electron-builder
