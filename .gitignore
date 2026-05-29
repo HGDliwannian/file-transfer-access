@@ -1,0 +1,11 @@
+node_modules/
+dist/
+public/build-info.json
+.DS_Store
+*.log
+
+# Accidental local artifacts
+bash
+electron-builder
+node
+snapdrop-personal@*

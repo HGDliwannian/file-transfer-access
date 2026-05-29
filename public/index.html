@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>快传</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <div class="app-shell">
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <h1>快传</h1>
+        <p class="tagline">同一热点 · 多端共享 · 实时同步</p>
+      </div>
+      <div class="topbar-actions">
+        <span id="appVersion" class="version-pill electron-only">版本 —</span>
+        <button id="btnCheckUpdate" type="button" class="mac-btn mac-btn--compact electron-only">检查更新</button>
+        <button id="btnRefresh" type="button" class="mac-btn mac-btn--compact">刷新</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <aside class="panel-side">
+        <section class="card" id="accessCard">
+          <h2>其他设备访问</h2>
+          <div class="url-row">
+            <p id="serverUrl" class="url">—</p>
+            <button id="btnToggleUrl" type="button" class="mac-btn mac-btn--compact">显示</button>
+          </div>
+          <div id="qrcode" class="qrcode">—</div>
+          <p class="tip">手机/另一台电脑连同一热点后扫码或打开上方地址</p>
+        </section>
+
+        <section class="card native-only hidden" id="settingsCard">
+          <h2>本机设置</h2>
+          <p id="saveDir" class="path">—</p>
+          <div class="row-btns">
+            <button id="btnChooseDir" type="button" class="mac-btn">保存文件夹</button>
+            <button id="btnOpenDir" type="button" class="mac-btn">打开文件夹</button>
+          </div>
+          <label class="check">
+            <input id="launchAtLogin" type="checkbox" />
+            <span>登录时自动启动（默认关闭，需手动开启）</span>
+          </label>
+        </section>
+      </aside>
+
+      <main class="panel-main">
+        <section class="card upload-card">
+          <h2>上传文件</h2>
+          <div class="upload-btns">
+            <label class="mac-btn mac-btn--primary mobile-only" for="cameraInput">
+              拍照
+              <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple hidden />
+            </label>
+            <label class="mac-btn" for="fileInput">
+              选择文件
+              <input id="fileInput" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.json,.csv" multiple hidden />
+            </label>
+            <button id="uploadBtn" class="mac-btn mac-btn--primary hidden" type="button">上传到共享区</button>
+          </div>
+          <div id="pendingWrap" class="pending-wrap hidden">
+            <div class="pending-toolbar">
+              <span id="pendingCount" class="pending-count"></span>
+              <button id="btnClearPending" type="button" class="mac-btn mac-btn--compact mac-btn--danger">全部清掉</button>
+            </div>
+            <div id="pendingPreview" class="pending"></div>
+          </div>
+          <p id="uploadStatus" class="status"></p>
+        </section>
+
+        <section class="files-section">
+          <div class="files-head">
+            <h2>共享文件 <span id="fileCount" class="badge badge--count">0</span></h2>
+          </div>
+          <div class="files-layout">
+            <div class="files-list-panel">
+              <ul id="fileList" class="file-list"></ul>
+              <div class="file-list-footer">
+                <button id="btnDeleteAll" type="button" class="mac-btn mac-btn--danger" disabled>全部删除</button>
+              </div>
+            </div>
+            <div id="previewPane" class="preview-pane">
+              <p class="empty">选择文件预览或下载</p>
+              <img id="previewImg" alt="" hidden />
+              <iframe id="previewFrame" hidden></iframe>
+              <div id="previewActions" class="preview-actions hidden">
+                <a id="btnDownload" class="mac-btn" href="#" download>下载</a>
+                <button id="btnOpenNative" type="button" class="mac-btn native-only hidden">本机打开</button>
+                <button id="btnRevealNative" type="button" class="mac-btn native-only hidden">本机定位</button>
+                <span class="copy-action">
+                  <button id="btnCopyFile" type="button" class="mac-btn">一键复制</button>
+                  <span id="copyStatus" class="copy-status" aria-live="polite"></span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  </div>
+
+  <div id="updateBar" class="update-bar electron-only hidden" role="status">
+    <span id="updateBarText">发现新版本</span>
+    <div class="update-bar__actions">
+      <button type="button" id="updateBarUpgrade" class="mac-btn mac-btn--compact mac-btn--primary">立即升级</button>
+      <button type="button" id="updateBarLater" class="mac-btn mac-btn--compact">稍后</button>
+    </div>
+  </div>
+
+  <div id="updateModal" class="mac-alert hidden" role="alertdialog" aria-modal="true">
+    <div class="mac-alert__backdrop" data-update-dismiss></div>
+    <div class="mac-alert__panel">
+      <p id="updateModalMessage" class="mac-alert__message">发现新版本，是否立即升级？</p>
+      <div class="mac-alert__actions">
+        <button type="button" id="updateModalLater" class="mac-alert__btn">稍后</button>
+        <button type="button" id="updateModalUpgrade" class="mac-alert__btn mac-alert__btn--primary">立即升级</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="infoModal" class="mac-alert hidden" role="alertdialog" aria-modal="true">
+    <div class="mac-alert__backdrop" data-info-dismiss></div>
+    <div class="mac-alert__panel">
+      <p id="infoMessage" class="mac-alert__message">—</p>
+      <div class="mac-alert__actions mac-alert__actions--single">
+        <button type="button" id="infoOk" class="mac-alert__btn mac-alert__btn--primary">好的</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirmModal" class="mac-alert hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmMessage">
+    <div class="mac-alert__backdrop" data-dismiss="cancel"></div>
+    <div class="mac-alert__panel">
+      <p id="confirmMessage" class="mac-alert__message">确定删除该文件？所有端将同步移除</p>
+      <div class="mac-alert__actions">
+        <button type="button" id="confirmCancel" class="mac-alert__btn">撤销</button>
+        <button type="button" id="confirmOk" class="mac-alert__btn mac-alert__btn--primary">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

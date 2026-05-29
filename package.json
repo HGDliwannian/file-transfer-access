@@ -1,0 +1,87 @@
+{
+  "name": "file-transfer-access",
+  "version": "1.0.0",
+  "description": "Personal LAN file transfer over mobile hotspot — 快传 (KuaiChuan)",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac dmg --arm64",
+    "prebuild:mac:app": "node scripts/generate-build-info.js",
+    "build:mac:app": "electron-builder --mac --arm64 --dir",
+    "postbuild:mac:app": "node scripts/finalize-build.js && node scripts/publish-release.js",
+    "build:win": "electron-builder --win --x64",
+    "enable": "bash scripts/enable.sh",
+    "enable:launch": "bash scripts/enable.sh --launch",
+    "stop": "bash scripts/stop.sh"
+  },
+  "author": "HGDliwannian (https://github.com/HGDliwannian)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HGDliwannian/file-transfer-access.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HGDliwannian/file-transfer-access/issues"
+  },
+  "homepage": "https://github.com/HGDliwannian/file-transfer-access#readme",
+  "keywords": [
+    "electron",
+    "lan",
+    "file-transfer",
+    "hotspot",
+    "snapdrop",
+    "local-network",
+    "快传"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "qrcode": "^1.5.4"
+  },
+  "build": {
+    "appId": "com.kuaichuan.file-transfer",
+    "productName": "快传",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        { "target": "dir", "arch": ["arm64"] }
+      ]
+    },
+    "dmg": {
+      "title": "快传",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "${productName}-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
