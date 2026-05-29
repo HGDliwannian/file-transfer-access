@@ -13,3 +13,4 @@ bash
 electron-builder
 node
 snapdrop-personal@*
+electron/native/copy-files

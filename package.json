@@ -4,6 +4,8 @@
   "description": "Personal LAN file transfer over mobile hotspot — 快传 (KuaiChuan)",
   "main": "electron/main.js",
   "scripts": {
+    "prestart": "bash scripts/build-native.sh",
+    "predev": "bash scripts/build-native.sh",
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder",
@@ -60,8 +62,17 @@
       "package.json"
     ],
     "asar": true,
+    "extraResources": [
+      {
+        "from": "electron/native/copy-files",
+        "to": "copy-files",
+        "filter": ["copy-files"]
+      }
+    ],
     "mac": {
       "category": "public.app-category.utilities",
+      "entitlements": "electron/entitlements.mac.plist",
+      "entitlementsInherit": "electron/entitlements.mac.plist",
       "target": [
         { "target": "dir", "arch": ["arm64"] }
       ]

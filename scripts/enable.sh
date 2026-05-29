@@ -20,6 +20,7 @@ do_stop() {
 do_build() {
   echo "→ 正在打包 ${APP_NAME}.app（首次或依赖变更较慢，请稍候）…"
   node "${ROOT}/scripts/generate-build-info.js"
+  bash "${ROOT}/scripts/build-native.sh"
   rm -rf "${ROOT}/dist/mac-arm64"
   npm run build:mac:app
   node "${ROOT}/scripts/finalize-build.js"

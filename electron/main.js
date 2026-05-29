@@ -369,7 +369,34 @@ function isImagePath(full) {
 }
 
 // AIGC START
-/** osascript 写入文件别名 — 经验证 Electron writeBuffer 无法在访达粘贴 */
+function resolveExistingPaths(paths) {
+  return paths
+    .map((p) => path.resolve(p))
+    .filter((p) => {
+      try {
+        return fs.existsSync(p) && fs.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    });
+}
+
+function getCopyFilesBinary() {
+  const devBin = path.join(__dirname, 'native', 'copy-files');
+  if (fs.existsSync(devBin)) return devBin;
+  const packagedBin = path.join(process.resourcesPath, 'copy-files');
+  if (fs.existsSync(packagedBin)) return packagedBin;
+  return null;
+}
+
+/** Swift NSPasteboard.writeObjects — 写入 furl，访达可粘贴 */
+function copyPathsViaNative(paths) {
+  const bin = getCopyFilesBinary();
+  if (!bin) return false;
+  execFileSync(bin, paths, { timeout: 10000 });
+  return true;
+}
+
 function copyPathsViaOsascript(paths) {
   if (paths.length === 1) {
     const p = escapeAppleScriptPath(paths[0]);
@@ -388,30 +415,56 @@ function copyPathsViaOsascript(paths) {
   );
 }
 
-/** 用 clipboard info 确认剪贴板里是 alias / list，避免假成功 */
-function verifyOsascriptFileClipboard(paths) {
+function verifyFileClipboard(paths) {
   try {
     const info = execFileSync('osascript', ['-e', 'clipboard info'], {
       encoding: 'utf8',
       timeout: 3000,
-    }).trim();
-    if (!info) return false;
-    if (paths.length === 1) return /alias/i.test(info);
-    return /list/i.test(info);
+    }).toLowerCase();
+    if (!info) return true;
+    if (paths.length === 1) return /alias|furl|list/.test(info);
+    return /list|furl/.test(info);
   } catch {
-    return false;
+    return true;
   }
 }
 
 function copyPathsAsFiles(paths) {
-  if (!paths.length) return false;
+  const resolved = resolveExistingPaths(paths);
+  if (!resolved.length) return false;
   if (process.platform !== 'darwin') {
-    clipboard.writeText(paths.map((p) => pathToFileURL(p).href).join('\n'));
+    clipboard.writeText(resolved.map((p) => pathToFileURL(p).href).join('\n'));
     return true;
   }
+
+  const tryNative = () => {
+    if (!getCopyFilesBinary()) return false;
+    copyPathsViaNative(resolved);
+    return true;
+  };
+  const tryOsascript = () => {
+    copyPathsViaOsascript(resolved);
+    return true;
+  };
+
+  if (resolved.length === 1) {
+    try {
+      if (tryNative() && verifyFileClipboard(resolved)) return true;
+    } catch { /* fallback */ }
+    try {
+      tryOsascript();
+      return verifyFileClipboard(resolved);
+    } catch {
+      return false;
+    }
+  }
+
   try {
-    copyPathsViaOsascript(paths);
-    return verifyOsascriptFileClipboard(paths);
+    if (tryNative() && verifyFileClipboard(resolved)) return true;
+  } catch { /* fallback */ }
+  try {
+    tryOsascript();
+    return verifyFileClipboard(resolved);
   } catch {
     return false;
   }
@@ -478,13 +531,10 @@ ipcMain.handle('copy-files', (_e, names) => {
     return { ok: false, message: '请先选择文件' };
   }
 
-  const paths = names
-    .map((name) => path.join(fileServer.getSaveDir(), path.basename(name)))
-    .filter((full) => fs.existsSync(full));
+  const paths = names.map((name) => path.join(fileServer.getSaveDir(), path.basename(name)));
+  if (!resolveExistingPaths(paths).length) return { ok: false, message: '文件不存在' };
 
-  if (!paths.length) return { ok: false, message: '文件不存在' };
-  if (paths.length === 1) return copyOneFileByPath(paths[0]);
-
+  // 批量复制一律按文件写入剪贴板（含单张图片、多图、非图片）
   return copyManyFilesByPaths(paths);
 });
 
