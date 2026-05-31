@@ -253,7 +253,7 @@ async function buildServerStatus() {
   if (!fileServer) await startServer();
   const ip = fileServer.getLanIp();
   const port = fileServer.port;
-  const pageUrl = `http://${ip}:${port}/mobile.html`;
+  const pageUrl = `http://${ip}:${port}/1.html`;
   const qrDataUrl = await QRCode.toDataURL(pageUrl, { width: 200, margin: 1 });
   return {
     ip,

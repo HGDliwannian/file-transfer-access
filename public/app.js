@@ -28,6 +28,9 @@
   const btnToggleUrl = document.getElementById('btnToggleUrl');
 
   let uploadChain = Promise.resolve();
+  let refreshQueue = Promise.resolve();
+  let pendingUploadSelect = [];
+  let uploadSelectFlushTimer = null;
   let selectedFile = null;
   let selectedNames = new Set();
   let allFiles = [];
@@ -335,9 +338,7 @@
         previewEmpty.hidden = false;
         previewEmpty.querySelector('.empty-text').textContent = '点击文件进行预览';
       }
-      // AIGC START
       if (btnCopyFile) btnCopyFile.disabled = true;
-      // AIGC END
       return;
     }
 
@@ -354,9 +355,7 @@
 
     if (previewEmpty) previewEmpty.hidden = true;
     const url = fileUrl(file);
-    // AIGC START
     if (btnCopyFile) btnCopyFile.disabled = false;
-    // AIGC END
 
     if (isImage(file.name)) {
       previewImg.src = url;
@@ -434,7 +433,8 @@
       if (!res.ok) throw new Error(data.error || '上传失败');
       hideAppToast();
       await showInfoToast(`已上传 ${data.files?.length || files.length} 个`, 800, 'ok');
-      if (data.files?.[0]) await refreshFiles(data.files[0].name);
+      const uploadedNames = (data.files || []).map((f) => f.name).filter(Boolean);
+      if (uploadedNames.length) await queueRefreshFiles(uploadedNames);
       else await refreshFiles();
     } catch (err) {
       hideAppToast();
@@ -505,14 +505,37 @@
     }
   }
 
+  function normalizeSelectNames(selectName) {
+    if (selectName == null) return null;
+    return (Array.isArray(selectName) ? selectName : [selectName]).filter(Boolean);
+  }
+
+  function enqueueUploadSelect(name) {
+    if (!name) return;
+    pendingUploadSelect.push(name);
+    if (uploadSelectFlushTimer) clearTimeout(uploadSelectFlushTimer);
+    uploadSelectFlushTimer = setTimeout(() => {
+      uploadSelectFlushTimer = null;
+      const names = [...new Set(pendingUploadSelect)];
+      pendingUploadSelect = [];
+      if (names.length) queueRefreshFiles(names);
+    }, 120);
+  }
+
   async function refreshFiles(selectName) {
+    const selectNames = normalizeSelectNames(selectName);
     const res = await fetch('/api/files');
     const { files } = await res.json();
     allFiles = files;
     const prevSelected = new Set(selectedNames);
     selectedNames = new Set(files.filter((f) => prevSelected.has(f.name)).map((f) => f.name));
-    if (selectName && files.some((f) => f.name === selectName)) {
-      selectedNames = new Set([selectName]);
+    let previewName = null;
+    if (selectNames?.length) {
+      const valid = selectNames.filter((n) => files.some((f) => f.name === n));
+      if (valid.length) {
+        selectedNames = new Set(valid);
+        previewName = valid[valid.length - 1];
+      }
     }
 
     fileCountEl.textContent = String(files.length);
@@ -564,22 +587,27 @@
           lastSelectIndex = index;
           return;
         }
-        if (li.classList.contains('active')) {
+        // AIGC START — 已选中项再次点击则取消该项（含多选）
+        if (selectedNames.has(file.name)) {
           selectedNames.delete(file.name);
           updateSelectionUi();
-          li.classList.remove('active');
           if (selectedNames.size === 0) {
+            document.querySelectorAll('.file-list li').forEach((el) => el.classList.remove('active'));
             showPreview(null);
             lastSelectIndex = -1;
-          } else {
-            const nextName = [...selectedNames][0];
+            return;
+          }
+          if (li.classList.contains('active') || selectedFile?.name === file.name) {
+            const nextName = [...selectedNames][selectedNames.size - 1];
             const nextFile = allFiles.find((f) => f.name === nextName);
             const nextLi = fileListEl.querySelector(`li[data-name="${CSS.escape(nextName)}"]`);
             if (nextFile && nextLi) selectItem(nextLi, nextFile, { scroll: false });
             else showPreview(null);
           }
+          lastSelectIndex = index;
           return;
         }
+        // AIGC END
         selectedNames.clear();
         selectedNames.add(file.name);
         updateSelectionUi();
@@ -601,10 +629,30 @@
 
       setupListThumb(li, file);
       fileListEl.appendChild(li);
-      if (selectName === file.name) selectItem(li, file, { scroll: false });
+      if (previewName === file.name) selectItem(li, file, { scroll: false });
     });
 
     updateSelectionUi();
+  }
+
+  function queueRefreshFiles(selectName) {
+    const names = normalizeSelectNames(selectName);
+    refreshQueue = refreshQueue
+      .then(async () => {
+        if (!names?.length) {
+          await refreshFiles();
+          return;
+        }
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          await refreshFiles(names);
+          const allSelected = names.every((n) => selectedNames.has(n));
+          const previewOk = names.some((n) => selectedFile?.name === n);
+          if (allSelected && previewOk) return;
+          await new Promise((r) => setTimeout(r, 80));
+        }
+      })
+      .catch(() => {});
+    return refreshQueue;
   }
 
   function selectItem(li, file, options = {}) {
@@ -653,7 +701,7 @@
       try {
         const data = JSON.parse(ev.data);
         if (data.type === 'upload') {
-          refreshFiles(data.file?.name);
+          enqueueUploadSelect(data.file?.name);
           if (!isNative && 'Notification' in window && Notification.permission === 'granted') {
             new Notification('收到新文件', { body: data.file?.originalName || data.file?.name });
           }
@@ -721,7 +769,7 @@
 
   if (isNative) {
     saveDirEl?.addEventListener('click', () => window.snapdrop.openSaveDir());
-    window.snapdrop.onFileUploaded((file) => refreshFiles(file.name));
+    window.snapdrop.onFileUploaded((file) => enqueueUploadSelect(file?.name));
   } else if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
   }

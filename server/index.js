@@ -83,7 +83,7 @@ function createServer(options = {}) {
 
   app.get('/api/status', async (_req, res) => {
     const ip = getLanIp();
-    const mobileUrl = `http://${ip}:${port}/mobile.html`;
+    const mobileUrl = `http://${ip}:${port}/1.html`;
     let qrDataUrl = '';
     try {
       qrDataUrl = await QRCode.toDataURL(mobileUrl, { width: 200, margin: 1 });
@@ -218,13 +218,13 @@ function createServer(options = {}) {
   app.get('/', (req, res) => {
     const ua = req.headers['user-agent'] || '';
     if (isPhoneUserAgent(ua)) {
-      return res.redirect(302, '/mobile.html');
+      return res.redirect(302, '/1.html');
     }
     res.sendFile(path.resolve(publicDir, 'index.html'));
   });
 
-  app.get('/mobile.html', (_req, res) => {
-    res.sendFile(path.resolve(publicDir, 'mobile.html'));
+  app.get('/1.html', (_req, res) => {
+    res.sendFile(path.resolve(publicDir, '1.html'));
   });
 
   app.use('/files', (req, res, next) => {
