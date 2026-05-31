@@ -46,8 +46,11 @@
   },
   "dependencies": {
     "express": "^4.21.2",
+    "mammoth": "^1.12.0",
+    "marked": "^18.0.4",
     "multer": "^1.4.5-lts.1",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "xlsx": "^0.18.5"
   },
   "build": {
     "appId": "com.kuaichuan.file-transfer",
@@ -66,7 +69,9 @@
       {
         "from": "electron/native/copy-files",
         "to": "copy-files",
-        "filter": ["copy-files"]
+        "filter": [
+          "copy-files"
+        ]
       }
     ],
     "mac": {
@@ -74,7 +79,12 @@
       "entitlements": "electron/entitlements.mac.plist",
       "entitlementsInherit": "electron/entitlements.mac.plist",
       "target": [
-        { "target": "dir", "arch": ["arm64"] }
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
       ]
     },
     "dmg": {
@@ -85,7 +95,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "${productName}-${version}-Setup.${ext}"

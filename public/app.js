@@ -23,6 +23,13 @@
   const previewFrame = document.getElementById('previewFrame');
   const previewIcon = document.getElementById('previewIcon');
   const previewIconHint = document.getElementById('previewIconHint');
+  const previewVideo = document.getElementById('previewVideo');
+  const previewAudio = document.getElementById('previewAudio');
+  const previewText = document.getElementById('previewText');
+  const previewRich = document.getElementById('previewRich');
+  const previewMdToggle = document.getElementById('previewMdToggle');
+  let previewLoadId = 0;
+  let mdPreviewState = { fileName: '', text: '', mode: 'render', renderedHtml: '', renderOk: false };
   const filesListPanel = document.getElementById('filesListPanel');
   const btnCopyFile = document.getElementById('btnCopyFile');
   const btnToggleUrl = document.getElementById('btnToggleUrl');
@@ -157,8 +164,31 @@
   }
 
   function isImage(name) {
-    return /\.(png|jpe?g|gif|webp|bmp|heic|svg)$/i.test(name);
+    return /\.(png|jpe?g|gif|webp|bmp|heic|svg|ico)$/i.test(name);
   }
+
+  const TEXT_PREVIEW_EXTS = new Set([
+    'txt', 'json', 'xml', 'yaml', 'yml', 'log', 'csv', 'tsv',
+    'ini', 'conf', 'env', 'sh', 'bash', 'zsh', 'py', 'js', 'mjs', 'cjs', 'ts',
+    'tsx', 'jsx', 'vue', 'css', 'scss', 'less', 'html', 'htm', 'java', 'c', 'cpp',
+    'h', 'hpp', 'go', 'rs', 'sql', 'toml', 'properties', 'rtf',
+  ]);
+
+  function getPreviewKind(name) {
+    const m = name.match(/\.([^.]+)$/i);
+    const ext = m ? m[1].toLowerCase() : '';
+    if (isImage(name)) return 'image';
+    if (ext === 'pdf') return 'pdf';
+    if (/^(mp4|webm|mov|m4v|ogv|avi|mkv)$/i.test(ext)) return 'video';
+    if (/^(mp3|wav|m4a|aac|flac|ogg|opus|weba)$/i.test(ext)) return 'audio';
+    if (ext === 'docx') return 'docx';
+    if (/^(xlsx|xls|ods)$/i.test(ext)) return 'spreadsheet';
+    if (ext === 'md' || ext === 'markdown') return 'markdown';
+    if (TEXT_PREVIEW_EXTS.has(ext)) return 'text';
+    return 'unsupported';
+  }
+
+  const PREVIEW_TEXT_MAX = 512 * 1024;
 
   function getFileExtLabel(name) {
     const m = name.match(/\.([^.]+)$/);
@@ -173,7 +203,8 @@
     if (/\.(doc|docx)$/i.test(name)) return 'word';
     if (/\.(xls|xlsx|csv)$/i.test(name)) return 'excel';
     if (/\.(ppt|pptx)$/i.test(name)) return 'ppt';
-    if (/\.(txt|md|json|xml|yaml|yml|log|html|css|js|ts|py|sh)$/i.test(name)) return 'text';
+    if (/\.(md|markdown)$/i.test(name)) return 'markdown';
+    if (/\.(txt|json|xml|yaml|yml|log|html|css|js|ts|py|sh)$/i.test(name)) return 'text';
     if (/\.(zip|rar|7z|tar|gz|bz2)$/i.test(name)) return 'archive';
     return 'file';
   }
@@ -197,10 +228,12 @@
       audio: '♪',
       archive: 'ZIP',
       text: 'TXT',
+      markdown: 'MD',
       file: getFileExtLabel(file.name),
     };
     const label = labels[kind] || getFileExtLabel(file.name);
-    return `<div class="thumb-badge thumb-${kind}" data-text-thumb="${kind === 'text' ? '1' : ''}"><span>${escapeHtml(label)}</span></div>`;
+    const textThumb = kind === 'text' ? '1' : '';
+    return `<div class="thumb-badge thumb-${kind === 'markdown' ? 'text' : kind}" data-text-thumb="${textThumb}"><span>${escapeHtml(label)}</span></div>`;
   }
 
   function setupListThumb(li, file) {
@@ -315,22 +348,203 @@
   const previewDock = previewPane?.querySelector('.preview-dock');
 
   function setPreviewStageLayout(layout) {
-    previewStage?.classList.toggle('preview-stage--pdf', layout === 'pdf');
-    previewStage?.classList.toggle('preview-stage--inline', layout === 'inline');
-    const useDock = layout !== 'inline' && layout !== 'pdf';
-    previewPane?.classList.toggle('preview-pane--dock', useDock);
-    previewDock?.classList.toggle('hidden', !useDock);
+    const isPdf = layout === 'pdf';
+    const isInline = layout === 'inline' || isPdf;
+    const isDock = layout === 'dock';
+    previewStage?.classList.toggle('preview-stage--pdf', isPdf);
+    previewStage?.classList.toggle('preview-stage--inline', isInline);
+    previewPane?.classList.toggle('preview-pane--dock', isDock);
+    previewDock?.classList.toggle('hidden', !isDock);
   }
 
-  function showPreview(file) {
-    selectedFile = file;
+  function resetPreviewViews() {
     previewImg.hidden = true;
+    previewImg.removeAttribute('src');
     previewFrame.hidden = true;
+    previewFrame.removeAttribute('src');
+    if (previewVideo) {
+      previewVideo.hidden = true;
+      previewVideo.pause();
+      previewVideo.removeAttribute('src');
+    }
+    if (previewAudio) {
+      previewAudio.hidden = true;
+      previewAudio.pause();
+      previewAudio.removeAttribute('src');
+    }
+    if (previewText) {
+      previewText.hidden = true;
+      previewText.textContent = '';
+    }
+    if (previewRich) {
+      previewRich.hidden = true;
+      previewRich.innerHTML = '';
+      previewRich.classList.remove('preview-rich--markdown');
+    }
     previewIcon.hidden = true;
     previewIcon.innerHTML = '';
     previewIconHint?.classList.add('hidden');
     previewHeader?.classList.add('hidden');
-    setPreviewStageLayout(null);
+    previewMdToggle?.classList.add('hidden');
+    mdPreviewState = { fileName: '', text: '', mode: 'render', renderedHtml: '', renderOk: false };
+  }
+
+  function fillPreviewHeader(file, options = {}) {
+    previewHeader?.classList.remove('hidden');
+    if (previewFileName) previewFileName.textContent = file.name;
+    if (previewFileMeta) {
+      previewFileMeta.textContent = `${formatSize(file.size)} · ${formatTime(file.mtime)}`;
+    }
+    if (options.mdToggle) {
+      previewMdToggle?.classList.remove('hidden');
+      setMdPreviewMode(mdPreviewState.mode);
+    } else {
+      previewMdToggle?.classList.add('hidden');
+    }
+  }
+
+  function stripYamlFrontMatter(text) {
+    const normalized = text.replace(/^\uFEFF/, '');
+    if (!/^---\r?\n/.test(normalized)) return normalized;
+    const end = normalized.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+    if (!end) return normalized;
+    return normalized.slice(end[0].length);
+  }
+
+  function fenceLooksLikeMarkdown(inner) {
+    const lines = inner.trim().split('\n').filter((l) => l.trim());
+    if (lines.length < 2) return false;
+    let signals = 0;
+    for (const line of lines) {
+      if (/^#{1,6}\s/.test(line)) signals += 1;
+      if (/^>\s/.test(line)) signals += 1;
+      if (/^---\s*$/.test(line)) signals += 1;
+      if (/^[-*+]\s/.test(line)) signals += 1;
+      if (/^\d+\.\s/.test(line)) signals += 1;
+      if (signals >= 2) return true;
+    }
+    return false;
+  }
+
+  /** 预览模式：将代码块里「整段 Markdown 模板」展开后再渲染，避免 ##、> 等符号原样露出 */
+  function expandMarkdownFencesForPreview(text) {
+    return text.replace(/```(?:markdown|md|txt)?\s*\r?\n([\s\S]*?)```/gi, (full, inner) => (
+      fenceLooksLikeMarkdown(inner) ? `\n\n${inner.trim()}\n\n` : full
+    ));
+  }
+
+  function getMarkdownPreviewSource(text) {
+    return expandMarkdownFencesForPreview(stripYamlFrontMatter(text));
+  }
+
+  function getMarkedParseFn() {
+    const lib = window.marked;
+    if (!lib) return null;
+    if (typeof lib.parse === 'function') return lib.parse.bind(lib);
+    if (typeof lib.marked?.parse === 'function') return lib.marked.parse.bind(lib.marked);
+    if (typeof lib === 'function') return lib;
+    return null;
+  }
+
+  function setMdPreviewMode(mode) {
+    mdPreviewState.mode = mode;
+    previewMdToggle?.querySelectorAll('[data-mode]').forEach((btn) => {
+      const active = btn.dataset.mode === mode;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+  }
+
+  function initMarkdownRenderer() {
+    const parseFn = getMarkedParseFn();
+    if (!parseFn) return false;
+    const lib = window.marked;
+    if (lib && typeof lib.setOptions === 'function') {
+      lib.setOptions({ gfm: true, breaks: true, async: false });
+    }
+    return true;
+  }
+
+  function buildRenderedMarkdown(text) {
+    const parseFn = getMarkedParseFn();
+    if (!parseFn) {
+      return { ok: false, html: '' };
+    }
+    initMarkdownRenderer();
+    const body = getMarkdownPreviewSource(text);
+    try {
+      const out = parseFn(body, { async: false });
+      if (typeof out === 'string' && out.trim()) {
+        return { ok: true, html: out };
+      }
+      if (out && typeof out.then === 'function') {
+        return { ok: false, html: '', async: true };
+      }
+    } catch {
+      /* fall through */
+    }
+    return { ok: false, html: '' };
+  }
+
+  function applyMdPreviewView(mode, text) {
+    if (!previewText || !previewRich) return;
+    if (mode === 'source') {
+      previewRich.hidden = true;
+      previewRich.innerHTML = '';
+      previewRich.classList.remove('preview-rich--markdown');
+      previewText.textContent = text;
+      previewText.hidden = false;
+      return;
+    }
+    previewText.hidden = true;
+    previewText.textContent = '';
+    let html = mdPreviewState.renderedHtml;
+    let renderOk = mdPreviewState.renderOk;
+    if (mdPreviewState.text !== text || !html) {
+      const built = buildRenderedMarkdown(text);
+      renderOk = built.ok;
+      html = built.ok
+        ? `<div class="preview-md-body">${built.html}</div>`
+        : '';
+      mdPreviewState.text = text;
+      mdPreviewState.renderedHtml = html;
+      mdPreviewState.renderOk = renderOk;
+    }
+    if (!renderOk) {
+      previewRich.innerHTML = [
+        '<p class="preview-md-error">Markdown 渲染库未加载，无法显示排版预览</p>',
+        `<pre class="preview-md-fallback">${escapeHtml(text)}</pre>`,
+      ].join('');
+    } else {
+      previewRich.innerHTML = html;
+    }
+    previewRich.classList.add('preview-rich--markdown');
+    previewRich.hidden = false;
+  }
+
+  function showUnsupportedDock(file, hint) {
+    fillPreviewHeader(file);
+    if (previewEmpty) previewEmpty.hidden = true;
+    if (previewIconHint) {
+      previewIconHint.textContent = hint || '此格式暂不支持内嵌预览';
+      previewIconHint.classList.remove('hidden');
+    }
+    previewIcon.innerHTML = buildFileThumbHtml(file);
+    previewIcon.hidden = false;
+    setPreviewStageLayout('dock');
+    const video = previewIcon.querySelector('.thumb-video');
+    if (video) {
+      video.addEventListener('loadeddata', () => {
+        try { video.currentTime = 0.1; } catch { /* ignore */ }
+      });
+    }
+  }
+
+  async function showPreview(file) {
+    const loadId = ++previewLoadId;
+    selectedFile = file;
+    resetPreviewViews();
+    setPreviewStageLayout('dock');
 
     if (!file) {
       previewPane?.classList.remove('has-preview');
@@ -343,43 +557,121 @@
     }
 
     previewPane?.classList.add('has-preview');
-
-    const canInlinePreview = isImage(file.name) || /\.pdf$/i.test(file.name);
-    if (!canInlinePreview) {
-      previewHeader?.classList.remove('hidden');
-      if (previewFileName) previewFileName.textContent = file.name;
-      if (previewFileMeta) {
-        previewFileMeta.textContent = `${formatSize(file.size)} · ${formatTime(file.mtime)}`;
-      }
-    }
-
     if (previewEmpty) previewEmpty.hidden = true;
-    const url = fileUrl(file);
     if (btnCopyFile) btnCopyFile.disabled = false;
 
-    if (isImage(file.name)) {
+    const url = fileUrl(file);
+    const kind = getPreviewKind(file.name);
+    const stale = () => loadId !== previewLoadId;
+
+    if (kind === 'image') {
       previewImg.src = url;
       previewImg.hidden = false;
       setPreviewStageLayout('inline');
-    } else if (/\.pdf$/i.test(file.name)) {
+      return;
+    }
+    if (kind === 'pdf') {
       previewFrame.src = url;
       previewFrame.hidden = false;
       setPreviewStageLayout('pdf');
-    } else {
-      previewIcon.innerHTML = buildFileThumbHtml(file);
-      previewIcon.hidden = false;
-      if (previewIconHint) {
-        previewIconHint.textContent = '此格式暂不支持内嵌预览';
-        previewIconHint.classList.remove('hidden');
-      }
-      setPreviewStageLayout(null);
-      const video = previewIcon.querySelector('.thumb-video');
-      if (video) {
-        video.addEventListener('loadeddata', () => {
-          try { video.currentTime = 0.1; } catch { /* ignore */ }
-        });
-      }
+      return;
     }
+    if (kind === 'video' && previewVideo) {
+      fillPreviewHeader(file);
+      previewVideo.src = url;
+      previewVideo.hidden = false;
+      setPreviewStageLayout('inline');
+      return;
+    }
+    if (kind === 'audio' && previewAudio) {
+      fillPreviewHeader(file);
+      previewAudio.src = url;
+      previewAudio.hidden = false;
+      setPreviewStageLayout('inline');
+      return;
+    }
+    if (kind === 'markdown') {
+      fillPreviewHeader(file, { mdToggle: true });
+      setPreviewStageLayout('inline');
+      try {
+        const res = await fetch(url);
+        if (stale()) return;
+        let text = await res.text();
+        if (text.length > PREVIEW_TEXT_MAX) {
+          text = `${text.slice(0, PREVIEW_TEXT_MAX)}\n\n…（已截断，文件过大）`;
+        }
+        mdPreviewState = {
+          fileName: file.name,
+          text,
+          mode: 'render',
+          renderedHtml: '',
+          renderOk: false,
+        };
+        setMdPreviewMode('render');
+        applyMdPreviewView('render', text);
+      } catch {
+        if (!stale()) showUnsupportedDock(file, '无法读取 Markdown 内容');
+      }
+      return;
+    }
+    if (kind === 'text' && previewText) {
+      fillPreviewHeader(file);
+      setPreviewStageLayout('inline');
+      try {
+        const res = await fetch(url);
+        if (stale()) return;
+        let text = await res.text();
+        if (text.length > PREVIEW_TEXT_MAX) {
+          text = `${text.slice(0, PREVIEW_TEXT_MAX)}\n\n…（已截断，文件过大）`;
+        }
+        previewRich?.classList.remove('preview-rich--markdown');
+        previewText.textContent = text;
+        previewText.hidden = false;
+      } catch {
+        if (!stale()) showUnsupportedDock(file, '无法读取文本内容');
+      }
+      return;
+    }
+    if (kind === 'docx' && previewRich && window.mammoth) {
+      fillPreviewHeader(file);
+      setPreviewStageLayout('inline');
+      try {
+        const buf = await fetch(url).then((r) => r.arrayBuffer());
+        if (stale()) return;
+        const result = await window.mammoth.convertToHtml({ arrayBuffer: buf });
+        if (stale()) return;
+        previewRich.classList.remove('preview-rich--markdown');
+        previewRich.innerHTML = result.value;
+        previewRich.hidden = false;
+      } catch {
+        if (!stale()) showUnsupportedDock(file, '无法解析 Word 文档');
+      }
+      return;
+    }
+    if (kind === 'spreadsheet' && previewRich && window.XLSX) {
+      fillPreviewHeader(file);
+      setPreviewStageLayout('inline');
+      try {
+        const buf = await fetch(url).then((r) => r.arrayBuffer());
+        if (stale()) return;
+        const wb = window.XLSX.read(buf, { type: 'array' });
+        const sheetName = wb.SheetNames[0];
+        if (!sheetName) throw new Error('empty');
+        const html = window.XLSX.utils.sheet_to_html(wb.Sheets[sheetName], { id: 'kc-sheet-table' });
+        previewRich.classList.remove('preview-rich--markdown');
+        previewRich.innerHTML = html;
+        previewRich.hidden = false;
+      } catch {
+        if (!stale()) showUnsupportedDock(file, '无法解析表格文件');
+      }
+      return;
+    }
+
+    const hints = {
+      docx: '未加载 Word 预览组件',
+      spreadsheet: '未加载表格预览组件',
+    };
+    showUnsupportedDock(file, hints[kind]);
   }
 
   function applyAccessStatus(status) {
@@ -587,7 +879,6 @@
           lastSelectIndex = index;
           return;
         }
-        // AIGC START — 已选中项再次点击则取消该项（含多选）
         if (selectedNames.has(file.name)) {
           selectedNames.delete(file.name);
           updateSelectionUi();
@@ -607,7 +898,6 @@
           lastSelectIndex = index;
           return;
         }
-        // AIGC END
         selectedNames.clear();
         selectedNames.add(file.name);
         updateSelectionUi();
@@ -774,6 +1064,15 @@
     Notification.requestPermission();
   }
 
+  previewMdToggle?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-mode]');
+    if (!btn || !mdPreviewState.text || selectedFile?.name !== mdPreviewState.fileName) return;
+    const mode = btn.dataset.mode;
+    if (mode !== 'render' && mode !== 'source') return;
+    setMdPreviewMode(mode);
+    applyMdPreviewView(mode, mdPreviewState.text);
+  });
+
   async function init() {
     bindUploadZones();
     await Promise.all([
@@ -782,6 +1081,8 @@
     ]);
     connectEvents();
   }
+
+  initMarkdownRenderer();
 
   init().catch(() => {
     refreshFiles().catch(() => {});

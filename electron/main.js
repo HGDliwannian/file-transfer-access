@@ -433,17 +433,34 @@ function copyPathsViaOsascript(paths) {
   );
 }
 
-function verifyFileClipboard(paths) {
+function sameFilePath(a, b) {
   try {
-    const info = execFileSync('osascript', ['-e', 'clipboard info'], {
-      encoding: 'utf8',
-      timeout: 3000,
-    }).toLowerCase();
-    if (!info) return true;
-    if (paths.length === 1) return /alias|furl|list/.test(info);
-    return /list|furl/.test(info);
+    return fs.realpathSync(a) === fs.realpathSync(b);
   } catch {
-    return true;
+    return path.resolve(a) === path.resolve(b);
+  }
+}
+
+// AIGC START — 用 AppleScript 校验剪贴板是否已为访达可粘贴的文件
+function verifyFileClipboard(paths) {
+  if (process.platform !== 'darwin') return true;
+  try {
+    if (paths.length === 1) {
+      const clip = execFileSync(
+        'osascript',
+        ['-e', 'try\nPOSIX path of (the clipboard as alias)\nend try'],
+        { encoding: 'utf8', timeout: 3000 },
+      ).trim();
+      return clip && sameFilePath(clip, paths[0]);
+    }
+    const count = execFileSync(
+      'osascript',
+      ['-e', 'try\ncount of the clipboard\nend try'],
+      { encoding: 'utf8', timeout: 3000 },
+    ).trim();
+    return parseInt(count, 10) === paths.length;
+  } catch {
+    return false;
   }
 }
 
@@ -455,38 +472,21 @@ function copyPathsAsFiles(paths) {
     return true;
   }
 
-  const tryNative = () => {
-    if (!getCopyFilesBinary()) return false;
-    copyPathsViaNative(resolved);
-    return true;
-  };
-  const tryOsascript = () => {
+  try {
     copyPathsViaOsascript(resolved);
-    return true;
-  };
-
-  if (resolved.length === 1) {
-    try {
-      if (tryNative() && verifyFileClipboard(resolved)) return true;
-    } catch { /* fallback */ }
-    try {
-      tryOsascript();
-      return verifyFileClipboard(resolved);
-    } catch {
-      return false;
-    }
-  }
-
-  try {
-    if (tryNative() && verifyFileClipboard(resolved)) return true;
+    if (verifyFileClipboard(resolved)) return true;
   } catch { /* fallback */ }
+
   try {
-    tryOsascript();
-    return verifyFileClipboard(resolved);
-  } catch {
-    return false;
-  }
+    if (getCopyFilesBinary()) {
+      copyPathsViaNative(resolved);
+      if (verifyFileClipboard(resolved)) return true;
+    }
+  } catch { /* ignore */ }
+
+  return false;
 }
+// AIGC END
 
 function copyImageBitmap(full) {
   let img = nativeImage.createFromPath(full);
@@ -530,8 +530,7 @@ function copyImageToClipboard(full) {
 
 function copyOneFileByPath(full) {
   if (!fs.existsSync(full)) return copyFail('文件不存在');
-  if (isImagePath(full)) return copyImageToClipboard(full);
-  return copyPathsAsFiles([full]) ? copyOk() : copyFail();
+  return copyPathsAsFiles([full]) ? copyOk() : copyFail('无法拷贝为访达文件，请重试');
 }
 
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# AIGC START
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${ROOT}/electron/native/copy-files.swift"
@@ -15,4 +14,14 @@ fi
 swiftc -O "${SRC}" -o "${OUT}"
 chmod +x "${OUT}"
 echo "✓ built ${OUT}"
-# AIGC END
+VENDOR="${ROOT}/public/vendor"
+mkdir -p "${VENDOR}"
+if [[ -f "${ROOT}/node_modules/mammoth/mammoth.browser.min.js" ]]; then
+  cp "${ROOT}/node_modules/mammoth/mammoth.browser.min.js" "${VENDOR}/"
+fi
+if [[ -f "${ROOT}/node_modules/xlsx/dist/xlsx.full.min.js" ]]; then
+  cp "${ROOT}/node_modules/xlsx/dist/xlsx.full.min.js" "${VENDOR}/"
+fi
+if [[ -f "${ROOT}/node_modules/marked/lib/marked.umd.js" ]]; then
+  cp "${ROOT}/node_modules/marked/lib/marked.umd.js" "${VENDOR}/marked.min.js"
+fi

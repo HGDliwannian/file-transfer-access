@@ -93,7 +93,7 @@
         </section>
 
         <label class="visually-hidden" for="fileInput">选择文件</label>
-        <input id="fileInput" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.json,.csv" multiple hidden />
+        <input id="fileInput" type="file" multiple hidden />
       </div>
 
       <div class="panel-col panel-col--preview">
@@ -102,11 +102,23 @@
             <div class="preview-stage">
               <div class="preview-stage__content">
                 <div id="previewHeader" class="preview-header hidden">
-                  <h3 id="previewFileName" class="preview-filename"></h3>
-                  <p id="previewFileMeta" class="preview-meta"></p>
+                  <div class="preview-header__row">
+                    <div class="preview-header__info">
+                      <h3 id="previewFileName" class="preview-filename"></h3>
+                      <p id="previewFileMeta" class="preview-meta"></p>
+                    </div>
+                    <div id="previewMdToggle" class="preview-md-toggle hidden" role="tablist" aria-label="Markdown 显示模式">
+                      <button type="button" class="preview-md-toggle__btn is-active" data-mode="render" role="tab" aria-selected="true">预览</button>
+                      <button type="button" class="preview-md-toggle__btn" data-mode="source" role="tab" aria-selected="false">原内容</button>
+                    </div>
+                  </div>
                 </div>
                 <img id="previewImg" alt="" hidden />
                 <iframe id="previewFrame" hidden title="文件预览"></iframe>
+                <video id="previewVideo" class="preview-media" controls playsinline hidden></video>
+                <audio id="previewAudio" class="preview-media" controls hidden></audio>
+                <pre id="previewText" class="preview-text" hidden></pre>
+                <div id="previewRich" class="preview-rich" hidden></div>
               </div>
               <div class="preview-dock">
                 <p class="empty">
@@ -157,6 +169,9 @@
     </div>
   </div>
 
+  <script src="/vendor/mammoth.browser.min.js"></script>
+  <script src="/vendor/xlsx.full.min.js"></script>
+  <script src="/vendor/marked.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
